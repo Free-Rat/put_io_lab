@@ -1,0 +1,88 @@
+package put.io.patterns.implement;
+
+import oshi.SystemInfo;
+import oshi.hardware.HardwareAbstractionLayer;
+import oshi.software.os.OperatingSystem;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class SystemMonitor {
+	private List<SystemStateObserver> observers = new ArrayList<SystemStateObserver>();
+    private SystemInfo si = new SystemInfo();
+    private HardwareAbstractionLayer hal;
+    private OperatingSystem os;
+    private SystemState lastSystemState = null;
+
+    public SystemMonitor() {
+        this.hal = this.si.getHardware();
+        this.os = this.si.getOperatingSystem();
+    }
+	
+	public void addSystemStateObserver(SystemStateObserver observer){
+        observers.add(observer);
+    }
+    public void removeSystemStateObserver(SystemStateObserver observer){
+        observers.remove(observer);
+    }
+	
+	public void notifyObservers(){
+		for(SystemStateObserver observer : this.observers){
+			observer.update(this);
+		}
+	}
+
+    public interface SystemStateObserver{
+		public void update(SystemMonitor monitor);
+    }
+
+    public void probe() {
+        double cpuLoad = this.hal.getProcessor().getSystemLoadAverage(1)[0];
+        double cpuTemp = this.hal.getSensors().getCpuTemperature();
+        double memory = (double)(this.hal.getMemory().getAvailable() / 1000000L);
+        int usbDevices = this.hal.getUsbDevices(false).size();
+        this.lastSystemState = new SystemState(cpuLoad, cpuTemp, memory, usbDevices);
+        System.out.println("============================================");
+        System.out.println(String.format("CPU Load: %2.2f%%", 	this.lastSystemState.getCpu()));
+        System.out.println(String.format("CPU temperature: %.2f C", 	this.lastSystemState.getCpuTemp()));
+        System.out.println(String.format("Available memory: %.2f MB", 	this.lastSystemState.getAvailableMemory()));
+        System.out.println(String.format("USB devices: %d", 	this.lastSystemState.getUsbDevices()));
+		notifyObservers();
+    }
+
+    public SystemState getLastSystemState() {
+        return this.lastSystemState;
+    }
+	public class SystemGarbageCollectorObserver implements SystemMonitor.SystemStateObserver {
+		@Override
+		public void update(SystemMonitor monitor) {
+			if (monitor.getLastSystemState().getAvailableMemory() < 200.0) {
+				System.out.println("Running garbage collector...");
+			}
+		}
+	}
+	
+	public class SystemCoolerObserver implements SystemMonitor.SystemStateObserver {
+		@Override
+		public void update(SystemMonitor monitor) {
+			SystemState state = monitor.getLastSystemState();
+			if (state.getCpuTemp() > 60.0) {
+				System.out.println("> Increasing cooling of the CPU...");
+			}
+		}
+	}
+	
+	public class USBDeviceObserver implements SystemMonitor.SystemStateObserver {
+		private int lastUsbDevices = 0;
+
+		@Override
+		public void update(SystemMonitor monitor) {
+			SystemState state = monitor.getLastSystemState();
+			if (state.getUsbDevices() != lastUsbDevices) {
+				System.out.println("> USB devices count changed: " + state.getUsbDevices());
+				lastUsbDevices = state.getUsbDevices();
+			}
+		}
+	}
+
+}
